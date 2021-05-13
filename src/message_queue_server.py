@@ -12,7 +12,7 @@ queue = []
 
 # TODO: topics
 @app.route('/messageQueue/message', methods=['GET'])
-def get_person():
+def get_message():
     """
     Removes the first message in the queue and returns it to client (FIFO). If queue is empty, 403-not found response is
     returned.
@@ -25,7 +25,7 @@ def get_person():
 
 
 @app.route('/messageQueue/message', methods=['PUT'])
-def put_person():
+def put_message():
     """
     Adds the message to end of the queue.
     :return:

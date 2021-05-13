@@ -10,7 +10,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     URL = f'http://{args.host}:{args.port}/messageQueue/message'
-    message = {'name': 'kyle', 'email': 'chard@uchicago.edu'}
+    message = {'name': 'Amit', 'email': 'pradhanak@uchicago.edu'}
 
     response = requests.put(URL, json.dumps(message))
     print(f'Response: {response.status_code}')
