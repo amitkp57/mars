@@ -1,13 +1,25 @@
 import argparse
 import json
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask
 from flask import Response
 from flask import request
 
-app = Flask(__name__)
+from src import raft
 
+app = Flask(__name__)
+node = raft.Node()
 queue = []
+
+
+def run_background_tasks():
+    pass
+
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(func=run_background_tasks, trigger="interval", seconds=60)
+scheduler.start()
 
 
 # TODO: topics
@@ -33,6 +45,49 @@ def put_message():
     message = json.loads(request.get_data().decode('utf-8'))
     queue.append(message)
     return Response(status=201, mimetype='application/json')
+
+
+@app.route('/messageQueue/message', methods=['GET'])
+def get_message():
+    """
+    Removes the first message in the queue and returns it to client (FIFO). If queue is empty, 403-not found response is
+    returned.
+    :return:
+    """
+    if queue:
+        return Response(json.dumps(queue.pop(0)), status=200, mimetype='application/json')
+    else:
+        return Response(status=403, mimetype='application/json')
+
+
+@app.route('/heartbeats/heartbeat', methods=['POST'])
+def post_heartbeat():
+    """
+    Leader calls this endpoint to send periodic heartbeats.
+    :return:
+    """
+    pass
+    # TODO
+
+
+@app.route('/logs/sync', methods=['POST'])
+def sync_logs():
+    """
+    Leader sends logs data for syncing.
+    :return:
+    """
+    pass
+    # TODO
+
+
+@app.route('/election/vote', methods=['POST'])
+def vote_leader():
+    """
+    A candidate calls this api for requesting votes for leader election.
+    :return:
+    """
+    pass
+    # TODO
 
 
 if __name__ == '__main__':
