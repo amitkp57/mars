@@ -67,7 +67,7 @@ def initiate_leader_election():
 
     for sibling_server in node.sibling_nodes:
         try:
-            response = rest_client.post(sibling_server, '/election/vote', {'term': node.term})
+            response = rest_client.post(sibling_server, 'election/vote', {'term': node.term})
             if response['vote']:
                 votes += 1
             else:
