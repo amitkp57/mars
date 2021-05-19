@@ -121,3 +121,27 @@ def test_initiate_leader_election():
         mq_server.initiate_leader_election()
         node.transition_to_new_role.assert_has_calls([call(Role.CANDIDATE), call(Role.FOLLOWER)])
     node.incremenet_term.assert_called_once()
+
+
+def test_send_heartbeats():
+    node.reset_mock()
+    node.term = 1
+    node.sibling_nodes = ['localhost:90', 'localhost:91', 'localhost:92']
+    with requests_mock.Mocker() as mocker:
+        mocker.post('http://localhost:90/heartbeats/heartbeat', json={'term': 1}, status_code=200)
+        mocker.post('http://localhost:91/heartbeats/heartbeat', json={}, status_code=403)
+        mocker.post('http://localhost:92/heartbeats/heartbeat', json={'term': 1}, status_code=200)
+        mq_server.node = node
+        mq_server.send_heartbeats()
+        node.transition_to_new_role.assert_not_called()
+
+    node.reset_mock()
+    node.term = 1
+    node.sibling_nodes = ['localhost:90', 'localhost:91', 'localhost:92']
+    with requests_mock.Mocker() as mocker:
+        mocker.post('http://localhost:90/heartbeats/heartbeat', json={'term': 4}, status_code=200)
+        mocker.post('http://localhost:91/heartbeats/heartbeat', json={}, status_code=403)
+        mocker.post('http://localhost:92/heartbeats/heartbeat', json={'term': 1}, status_code=200)
+        mq_server.node = node
+        mq_server.send_heartbeats()
+        node.transition_to_new_role.assert_called_once_with(Role.FOLLOWER)

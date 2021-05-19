@@ -42,7 +42,7 @@ def send_heartbeats():
     print(f'Sending heartbeats to the follower nodes.')
     for sibling_server in node.sibling_nodes:
         try:
-            response = rest_client.post(sibling_server, '/heartbeats/heartbeat', {'term': node.term})
+            response = rest_client.post(sibling_server, 'heartbeats/heartbeat', {'term': node.term})
             if response['term'] > node.term:  # received response from node with higher term
                 node.term = response['term']
                 node.transition_to_new_role(Role.FOLLOWER)
