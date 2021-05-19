@@ -99,6 +99,7 @@ def post_heartbeat():
     Leader calls this endpoint to send periodic heartbeats.
     :return:
     """
+    node.reset_last_heartbeat() # reset heartbeat timer of the node
     return Response(SUCCESS_RESPONSE, status=200, mimetype='application/json')
 
 

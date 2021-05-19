@@ -50,8 +50,8 @@ class Node:
             return False
         cur_time = time.perf_counter()
         time_elapsed = cur_time - self.__last_heartbeat
-        print(f'time elapsed: {time_elapsed}')
         if time_elapsed >= self.__timeout:
+            print(f'heartbeat timeout! time elapsed since last heartbeat received: {time_elapsed}')
             self.reset_last_heartbeat()
             return True
         return False
