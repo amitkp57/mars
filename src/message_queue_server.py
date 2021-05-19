@@ -6,7 +6,7 @@ from flask import Flask
 from flask import Response
 from flask import request
 
-from src import raft
+from src import raft, rest_client
 
 SCHEDULER_INTERVAL = 60
 app = Flask(__name__)
@@ -27,8 +27,23 @@ scheduler = BackgroundScheduler()
 
 def initiate_leader_election():
     print(f'initiating leader election!')
+    votes = 1  # vote for itself
+
+    # change to candidate role
+    node.transition_to_new_role(raft.Role.CANDIDATE)
     for sibling_server in node.sibling_nodes:
-        pass
+        try:
+            response = rest_client.post(sibling_server, '/election/vote', {})
+            votes += 1
+        except Exception as e:
+            print(f'vote call to {sibling_server} failed with: {e}')
+
+    print(f'received {votes}/{node.total_nodes} votes.')
+    if votes > node.total_nodes / 2:
+        node.transition_to_new_role(raft.Role.LEADER)
+    else:
+        node.transition_to_new_role(raft.Role.FOLLOWER)
+    return
 
 
 # TODO: topics
@@ -62,8 +77,7 @@ def post_heartbeat():
     Leader calls this endpoint to send periodic heartbeats.
     :return:
     """
-    pass
-    # TODO
+    return Response(SUCCESS_RESPONSE, status=200, mimetype='application/json')
 
 
 @app.route('/logs/sync', methods=['POST'])
@@ -72,8 +86,7 @@ def sync_logs():
     Leader sends logs data for syncing.
     :return:
     """
-    pass
-    # TODO
+    return Response(SUCCESS_RESPONSE, status=200, mimetype='application/json')
 
 
 @app.route('/election/vote', methods=['POST'])
@@ -82,8 +95,7 @@ def vote_leader():
     A candidate calls this api for requesting votes for leader election.
     :return:
     """
-    pass
-    # TODO
+    return Response(SUCCESS_RESPONSE, status=200, mimetype='application/json')
 
 
 if __name__ == '__main__':

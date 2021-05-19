@@ -22,8 +22,16 @@ class Node:
         return self.__role
 
     @property
+    def total_nodes(self):
+        return len(self.__sibling_nodes) + 1
+
+    @property
     def sibling_nodes(self):
         return self.__sibling_nodes
+
+    def transition_to_new_role(self, role):
+        self.__role = role
+        return
 
     def check_heartbeat_timeout(self):
         """
