@@ -28,6 +28,6 @@ def put(hostname, service_url, data):
 
 
 if __name__ == '__main__':
-    print(put('localhost:80', '/messageQueue/message', {}))
-    print(get('localhost:80', '/messageQueue/message'))
-    print(post('localhost:80', '/heartbeats/heartbeat'))
+    print(put('localhost:3441', '/messageQueue/message', {}))
+    print(get('localhost:3441', '/messageQueue/message'))
+    print(post('localhost:3441', '/heartbeats/heartbeat'))

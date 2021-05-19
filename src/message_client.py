@@ -13,11 +13,11 @@ if __name__ == '__main__':
     message = {'name': 'Amit', 'email': 'pradhanak@uchicago.edu'}
 
     response = requests.put(URL, json.dumps(message))
-    print(f'Response: {response.status_code}')
+    print(f'Response: {response.status_code}.')
 
     response = requests.get(URL)
-    print(f'Response: {response.status_code}')
-    print(f'Response: {response.json()}')
+    print(f'Response: {response.status_code}.')
+    print(f'Response: {response.json()}.')
 
     response = requests.get(URL)
-    print(f'Response: {response.status_code}')
+    print(f'Response: {response.status_code}.')

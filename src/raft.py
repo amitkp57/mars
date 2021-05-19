@@ -15,11 +15,21 @@ def get_timeout():
 
 class Node:
     def __init__(self, sibling_nodes):
+        self.__term = 0
         self.__role = Role.FOLLOWER
         self.__leader = None
         self.__last_heartbeat = time.perf_counter()
         self.__timeout = get_timeout()
         self.__sibling_nodes = sibling_nodes
+
+    @property
+    def term(self):
+        return self.__term
+
+    @term.setter
+    def term(self, term):
+        self.__term = term
+        return
 
     @property
     def role(self):
@@ -32,6 +42,10 @@ class Node:
     @property
     def sibling_nodes(self):
         return self.__sibling_nodes
+
+    def incremenet_term(self):
+        self.__term += 1
+        return
 
     def transition_to_new_role(self, role):
         self.__role = role
@@ -51,7 +65,7 @@ class Node:
         cur_time = time.perf_counter()
         time_elapsed = cur_time - self.__last_heartbeat
         if time_elapsed >= self.__timeout:
-            print(f'heartbeat timeout! time elapsed since last heartbeat received: {time_elapsed}')
+            print(f'Heartbeat timeout! Time elapsed since last heartbeat received: {time_elapsed}.')
             self.reset_last_heartbeat()
             return True
         return False
