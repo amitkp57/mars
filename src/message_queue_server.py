@@ -8,7 +8,7 @@ from flask import request
 
 from src import raft, rest_client
 
-SCHEDULER_INTERVAL = 60
+SCHEDULER_INTERVAL = 1
 app = Flask(__name__)
 node = None
 queue = []
@@ -16,13 +16,35 @@ queue = []
 SUCCESS_RESPONSE = json.dumps({'status': 'succeeded'})
 FAIL_RESPONSE = json.dumps({'status': 'succeeded'})
 
+scheduler = BackgroundScheduler()
+
 
 def run_background_tasks():
+    """
+    1. if node is leader, it needs to send heartbeats periodically.
+    2. if node is follower and didn't receive any heartbeat with the timeout period, it starts leader election process.
+    """
+    if node.is_leader():
+        send_heartbeats()
+
     if node.check_heartbeat_timeout():
         initiate_leader_election()
 
+    return
 
-scheduler = BackgroundScheduler()
+
+def send_heartbeats():
+    """
+    Send heartbeats to follower nodes. Ignore failures.
+    :return:
+    """
+    print(f'sending heartbeats to follower nodes.')
+    for sibling_server in node.sibling_nodes:
+        try:
+            response = rest_client.post(sibling_server, '/heartbeats/heartbeat', {})
+        except Exception as e:
+            print(f'sending heartbeat to {sibling_server} failed with: {e}')
+    return
 
 
 def initiate_leader_election():

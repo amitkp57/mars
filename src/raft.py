@@ -9,12 +9,16 @@ class Role(Enum):
     LEADER = 3
 
 
+def get_timeout():
+    return random.uniform(10, 20)
+
+
 class Node:
     def __init__(self, sibling_nodes):
         self.__role = Role.FOLLOWER
         self.__leader = None
         self.__last_heartbeat = time.perf_counter()
-        self.__timeout = random.uniform(0, 10)
+        self.__timeout = get_timeout()
         self.__sibling_nodes = sibling_nodes
 
     @property
@@ -33,12 +37,17 @@ class Node:
         self.__role = role
         return
 
+    def is_leader(self):
+        return self.__role == Role.LEADER
+
     def check_heartbeat_timeout(self):
         """
         Checks if time elapsed is greater than the timeout.
         If yes, reset timer.
         :return: boolean
         """
+        if self.is_leader():  # If leader itself, no need to check heartbeat timeout
+            return False
         cur_time = time.perf_counter()
         time_elapsed = cur_time - self.__last_heartbeat
         print(f'time elapsed: {time_elapsed}')
@@ -52,7 +61,7 @@ class Node:
         Resets last heartbeat received time to current time.
         """
         self.__last_heartbeat = time.perf_counter()
-        self.__timeout = random.uniform(0, 10)
+        self.__timeout = get_timeout()
 
 
 if __name__ == '__main__':
