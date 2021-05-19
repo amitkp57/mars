@@ -146,7 +146,7 @@ def vote_leader():
     A candidate calls this api for requesting votes for leader election.
     :return:
     """
-    message = json.loads(request.get_data().decode('utf-8€'))
+    message = json.loads(request.get_data().decode('utf-8'))
     requester_term = message['term']
     if requester_term > node.term:
         node.term = requester_term
