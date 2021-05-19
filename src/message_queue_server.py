@@ -119,8 +119,8 @@ def post_heartbeat():
     """
     message = json.loads(request.get_data().decode('utf-8'))
     requester_term = message['term']
-    if requester_term > node.term:
-        node.term = requester_term.term
+    if requester_term >= node.term:
+        node.term = requester_term
         output = {'term': node.term}
         node.transition_to_new_role(Role.FOLLOWER)  # Received response from leader. Go back to follower state.
         node.reset_last_heartbeat()  # reset heartbeat timer of the node
