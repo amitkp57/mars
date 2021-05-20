@@ -1,0 +1,19 @@
+{
+  "addresses": [
+    {
+      "ip": "http://127.0.0.1",
+      "port": 8567,
+      "internal_port": 5361
+    },
+    {
+      "ip": "http://127.0.0.1",
+      "port": 9123,
+      "internal_port": 3949
+    },
+    {
+      "ip": "http://127.0.0.1",
+      "port": 8889,
+      "internal_port": 4276
+    }
+  ]
+}
