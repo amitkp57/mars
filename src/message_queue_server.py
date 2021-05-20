@@ -1,5 +1,7 @@
 import argparse
 import json
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import as_completed
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask
@@ -40,16 +42,21 @@ def send_heartbeats():
     :return:
     """
     print(f'Sending heartbeats to the follower nodes.')
-    for sibling_server in node.sibling_nodes:
-        try:
-            response = rest_client.post(sibling_server, 'heartbeats/heartbeat', {'term': node.term})
-            if response['term'] > node.term:  # received response from node with higher term
-                node.term = response['term']
-                node.transition_to_new_role(Role.FOLLOWER)
-                print(f'Received response from a higher term node. Returning to follower state.')
-                break
-        except Exception as e:
-            print(f'Sending heartbeats to {sibling_server} failed with: {e}.')
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = []
+        for sibling_server in node.sibling_nodes:
+            futures.append(
+                executor.submit(rest_client.post, sibling_server, 'heartbeats/heartbeat', {'term': node.term}))
+        for future in as_completed(futures):
+            try:
+                response = future.result()
+                if response['term'] > node.term:  # received response from node with higher term
+                    node.term = response['term']
+                    node.transition_to_new_role(Role.FOLLOWER)
+                    print(f'Received response from a higher term node. Returning to follower state.')
+                    break
+            except Exception as e:
+                print(f'Sending heartbeats to {sibling_server} failed with: {e}.')
     return
 
 
@@ -64,25 +71,38 @@ def initiate_leader_election():
     # change to candidate role
     node.transition_to_new_role(raft.Role.CANDIDATE)
     node.incremenet_term()
+    node.voted_for = None
 
-    for sibling_server in node.sibling_nodes:
-        try:
-            response = rest_client.post(sibling_server, 'election/vote', {'term': node.term})
-            if response['vote']:
-                votes += 1
-            else:
-                print(f'Encountered a higher term node. Stopped leader election.')
-                node.term = response['term']
-                node.transition_to_new_role(raft.Role.FOLLOWER)
-                return
-        except Exception as e:
-            print(f'Vote call to {sibling_server} failed with: {e}.')
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {}
+        for sibling_server in node.sibling_nodes:
+            future = executor.submit(
+                rest_client.post, sibling_server, 'election/vote', {'term': node.term, 'candidateId': node.index})
+            futures[future] = sibling_server
 
-    print(f'Received {votes}/{node.total_nodes} votes.')
-    if votes > node.total_nodes / 2:
-        node.transition_to_new_role(raft.Role.LEADER)
-    else:
-        node.transition_to_new_role(raft.Role.FOLLOWER)
+        while futures and not node.check_heartbeat_timeout():
+            retries = {}
+            for future in as_completed(futures):
+                try:
+                    response = future.result()
+                    if response['vote']:
+                        votes += 1
+                    elif response['term'] > node.term:
+                        print(f'Encountered a higher term node. Stopped leader election.')
+                        node.term = response['term']
+                        node.transition_to_new_role(raft.Role.FOLLOWER)
+                        return
+                except Exception as e:
+                    print(f'Vote call to {sibling_server} failed with: {e}.')
+                    retry = executor.submit(rest_client.post, futures[future], 'election/vote',
+                                            {'term': node.term, 'candidateId': node.index})
+                    retries[retry] = sibling_server
+            print(f'Received {votes}/{node.total_nodes} votes.')
+            if votes > node.total_nodes / 2 and node.role == Role.CANDIDATE:
+                node.transition_to_new_role(raft.Role.LEADER)
+            futures = retries
+
+    node.transition_to_new_role(raft.Role.FOLLOWER)
     return
 
 
@@ -121,6 +141,7 @@ def post_heartbeat():
     requester_term = message['term']
     if requester_term >= node.term:
         node.term = requester_term
+        node.voted_for = None
         output = {'term': node.term}
         node.transition_to_new_role(Role.FOLLOWER)  # Received response from leader. Go back to follower state.
         node.reset_last_heartbeat()  # reset heartbeat timer of the node
@@ -148,22 +169,39 @@ def vote_leader():
     """
     message = json.loads(request.get_data().decode('utf-8'))
     requester_term = message['term']
+    candidate_id = message['candidateId']
+
+    # update term and move to follower state
     if requester_term > node.term:
         node.term = requester_term
+        node.voted_for = candidate_id
+        node.transition_to_new_role(Role.FOLLOWER)
         output = {'vote': True, 'term': node.term}
         return Response(json.dumps(output), status=200, mimetype='application/json')
-    else:
-        output = {'vote': False, 'term': node.term}
+    elif requester_term == node.term and (not node.voted_for or node.voted_for == candidate_id):
+        node.transition_to_new_role(Role.FOLLOWER)
+        node.voted_for = candidate_id
+        output = {'vote': True, 'term': node.term}
         return Response(json.dumps(output), status=200, mimetype='application/json')
+
+    # vote no
+    output = {'vote': False, 'term': node.term}
+    return Response(json.dumps(output), status=200, mimetype='application/json')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("host", type=str, help="host of the message queue server")
-    parser.add_argument("port", type=str, help="port of the message queue server")
-    parser.add_argument("sibling_nodes", nargs='+', help="other nodes addresses")
+    parser.add_argument("path_to_config", type=str, help="path to server config file")
+    parser.add_argument("index", type=int, help="index of the server to start")
     args = parser.parse_args()
-    node = raft.Node(args.sibling_nodes)
-    scheduler.add_job(func=run_background_tasks, trigger="interval", seconds=SCHEDULER_INTERVAL)
-    scheduler.start()
-    app.run(host=args.host, port=args.port)
+    with open(args.path_to_config, 'r') as config_file:
+        server_config = json.load(config_file)['addresses']
+        nodes = [(server['ip'].removeprefix('http://'), server['port']) for server in server_config]
+        sibling_nodes = [f'{node[0]}:{node[1]}' for idx, node in enumerate(nodes) if idx != args.index]
+        node = raft.Node(args.index, sibling_nodes)
+        scheduler.add_job(func=run_background_tasks, trigger="interval", seconds=SCHEDULER_INTERVAL)
+        scheduler.start()
+        print(
+            f'Starting server {args.index} on {nodes[args.index][0]}:{nodes[args.index][1]} with sibling nodes as '
+            f'{sibling_nodes}.')
+        app.run(host=nodes[args.index][0], port=nodes[args.index][1])
