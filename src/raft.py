@@ -1,6 +1,9 @@
 import random
+import threading
 import time
 from enum import Enum
+
+from src.log import NodeLog
 
 
 class Role(Enum):
@@ -15,15 +18,42 @@ def get_timeout():
 
 class Node:
     def __init__(self, index, sibling_nodes):
+        self.__thread_lock = threading.Lock()
         self.__index = index  # server index
-        self.__term = 0  # term of the election
+        self.__term = -1  # term of the election
         self.__role = Role.FOLLOWER
         self.__voted_for = None  # voted for in current term
+        self.__leader = None
         self.__committed_index = -1
         self.__last_applied = -1
         self.__last_heartbeat = time.perf_counter()
         self.__timeout = get_timeout()
         self.__sibling_nodes = sibling_nodes
+        self.__logs = NodeLog()
+        # these two are used when node becomes leader
+        self.__next_index = None
+        self.__match_index = None
+
+    @property
+    def leader(self):
+        return self.__leader
+
+    @leader.setter
+    def leader(self, leader):
+        self.__leader = leader
+        return
+
+    @property
+    def logs(self):
+        return self.__logs
+
+    @property
+    def next_index(self):
+        return self.__next_index
+
+    @property
+    def match_index(self):
+        return self.__match_index
 
     @property
     def committed_index(self):
@@ -67,6 +97,10 @@ class Node:
     def sibling_nodes(self):
         return self.__sibling_nodes
 
+    @property
+    def thread_lock(self):
+        return self.__thread_lock
+
     def increment_term(self):
         self.__term += 1
         return
@@ -77,6 +111,10 @@ class Node:
 
     def is_leader(self):
         return self.__role == Role.LEADER
+
+    def prepare_for_leadership(self):
+        self.__match_index = {server: -1 for server in self.__sibling_nodes}
+        self.__next_index = {server: self.__logs.log_size() for server in self.__sibling_nodes}
 
     def check_heartbeat_timeout(self):
         """
@@ -100,6 +138,11 @@ class Node:
         """
         self.__last_heartbeat = time.perf_counter()
         self.__timeout = get_timeout()
+
+    def increment_last_applied(self):
+        with self.__thread_lock:
+            self.__last_applied += 1
+        return
 
 
 if __name__ == '__main__':

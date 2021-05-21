@@ -8,8 +8,7 @@ class Operation(Enum):
 
 
 class Command:
-    def __init__(self, id, operation, message=None):
-        self.__id = id  # unique identifier for the command
+    def __init__(self, operation, message=None):
         self.__operation = operation
         self.__message = message
 
@@ -20,10 +19,6 @@ class Command:
     @property
     def message(self):
         return self.__operation
-
-    @property
-    def id(self):
-        return self.__id
 
 
 class LogEntry:
@@ -41,10 +36,9 @@ class LogEntry:
 
 
 class NodeLog:
-    def __init__(self, term):
-        self.thread_lock = threading.Lock()
-        self.__term = term
-        self.__logs = []
+    def __init__(self):
+        self.__thread_lock = threading.Lock()
+        self.__entries = []
         self.__committed_index = -1
         self.__applied_index = -1
 
@@ -55,3 +49,17 @@ class NodeLog:
     @property
     def applied_index(self):
         return self.__applied_index
+
+    @property
+    def log_size(self):
+        return len(self.__entries)
+
+    @property
+    def entries(self):
+        return self.__entries
+
+    def delete_entries_from(self, idx):
+        self.__entries = self.__entries[:idx]
+
+    def append(self, entry):
+        self.__entries.append(entry)

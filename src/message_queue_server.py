@@ -24,39 +24,104 @@ scheduler = BackgroundScheduler()
 
 def run_background_tasks():
     """
-    1. if node is leader, it needs to send heartbeats periodically.
+    1. if node is leader, it needs to send heartbeats and log entries for syncing followers' logs with its own.
     2. if node is follower and didn't receive any heartbeat with the timeout period, it starts leader election process.
+    3. Apply committed logs to the state machines
+    4. Leaders need to increase it's committed index once more than half of the nodes replicate a log entry.
     """
     if node.is_leader():
-        send_heartbeats()
+        append_entries()
+        update_committed_index()
 
     if node.check_heartbeat_timeout():
         initiate_leader_election()
 
+    apply_state_machine()
     return
 
 
-def send_heartbeats():
+def apply_state_machine():
     """
-    Send heartbeats to follower nodes. Ignore failures.
+    Apply commands to the state machine i.e. get/put messages from/into queue
     :return:
     """
-    print(f'Sending heartbeats to the follower nodes.')
+    with node.thread_lock:
+        if node.committed_index > node.last_applied:
+            node.increment_last_applied()
+            # TODO update queues
+    return
+
+
+def append_entries():
+    """
+    Send requests for appending log entries to follower nodes. Ignore failures.
+    :return:
+    """
+    print(f'Sending append messages to the follower nodes.')
     with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = []
+        futures = {}
         for sibling_server in node.sibling_nodes:
-            futures.append(
-                executor.submit(rest_client.post, sibling_server, 'heartbeats/heartbeat', {'term': node.term}))
-        for future in as_completed(futures):
+            data = {
+                'term': node.term,
+                'leaderId': node.index,
+                'prevLogTerm': -1,
+                'prevLogIndex': -1,
+                'entry': None,
+                'leaderCommit': node.committed_index
+            }
+            curr_index = node.next_index[sibling_server]
+            if curr_index > 0:
+                prev_index = curr_index - 1
+                data['prevLogTerm'] = node.logs.entries[prev_index].term
+                data['prevLogIndex'] = prev_index
+                if curr_index < node.logs.log_size:
+                    data['entry'] = node.logs[curr_index]
+            promise = executor.submit(rest_client.post, sibling_server, 'heartbeats/heartbeat', data)
+            futures[promise] = sibling_server
+        for promise in as_completed(futures):
             try:
-                response = future.result()
+                response = promise.result()
+                server = futures[promise]
+                curr_index = node.next_index[server]
                 if response['term'] > node.term:  # received response from node with higher term
-                    node.term = response['term']
-                    node.transition_to_new_role(Role.FOLLOWER)
-                    print(f'Received response from a higher term node. Returning to follower state.')
+                    update_term_return_to_follower(response['term'])
                     break
+                if response['success']:
+                    node.match_index[server] = curr_index - 1
+                    if curr_index < node.logs.log_size:
+                        node.next_index[server] += 1
+                else:
+                    node.next_index[server] -= 1
             except Exception as e:
                 print(f'Sending heartbeats to {sibling_server} failed with: {e}.')
+    return
+
+
+def update_committed_index():
+    """
+    Update committed index.
+    :return:
+    """
+    if node.logs.log_size - 1 == node.committed_index:
+        return
+    count = 1
+    for value in node.match_index.values():
+        if value > node.committed_index:
+            count += 1
+    if count > (node.total_nodes / 2):
+        node.committed_index += 1
+    return
+
+
+def update_term_return_to_follower(term):
+    """
+    Return to follower state and update term.
+    :param term:
+    :return:
+    """
+    node.term = term
+    node.transition_to_new_role(Role.FOLLOWER)
+    print(f'Received response from a higher term node. Returning to follower state.')
     return
 
 
@@ -75,9 +140,15 @@ def initiate_leader_election():
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {}
+        data = {
+            'term': node.term,
+            'candidateId': node.index,
+            'lastLogTerm': node.logs.entries[-1].term,
+            'lastLogIndex': node.logs.log_size - 1
+        }
         for sibling_server in node.sibling_nodes:
             future = executor.submit(
-                rest_client.post, sibling_server, 'election/vote', {'term': node.term, 'candidateId': node.index})
+                rest_client.post, sibling_server, 'election/vote', data)
             futures[future] = sibling_server
 
         while futures and not node.check_heartbeat_timeout():
@@ -88,18 +159,16 @@ def initiate_leader_election():
                     if response['vote']:
                         votes += 1
                     elif response['term'] > node.term:
-                        print(f'Encountered a higher term node. Stopped leader election.')
-                        node.term = response['term']
-                        node.transition_to_new_role(raft.Role.FOLLOWER)
+                        update_term_return_to_follower(response['term'])
                         return
                 except Exception as e:
                     print(f'Vote call to {sibling_server} failed with: {e}.')
-                    retry = executor.submit(rest_client.post, futures[future], 'election/vote',
-                                            {'term': node.term, 'candidateId': node.index})
+                    retry = executor.submit(rest_client.post, futures[future], 'election/vote', data)
                     retries[retry] = sibling_server
             print(f'Received {votes}/{node.total_nodes} votes.')
             if votes > node.total_nodes / 2 and node.role == Role.CANDIDATE:
                 node.transition_to_new_role(raft.Role.LEADER)
+                return
             futures = retries
 
     node.transition_to_new_role(raft.Role.FOLLOWER)
@@ -131,34 +200,58 @@ def put_message():
     return Response(SUCCESS_RESPONSE, status=201, mimetype='application/json')
 
 
-@app.route('/heartbeats/heartbeat', methods=['POST'])
-def post_heartbeat():
-    """
-    Leader calls this endpoint to send periodic heartbeats.
-    :return:
-    """
-    message = json.loads(request.get_data().decode('utf-8'))
-    requester_term = message['term']
-    if requester_term >= node.term:
-        node.term = requester_term
-        node.voted_for = None
-        output = {'term': node.term}
-        node.transition_to_new_role(Role.FOLLOWER)  # Received response from leader. Go back to follower state.
-        node.reset_last_heartbeat()  # reset heartbeat timer of the node
-        return Response(json.dumps(output), status=200, mimetype='application/json')
-    else:
-        output = {'term': node.term}  # requesting node has lower term. Inform it to go back to follower state.
-        return Response(json.dumps(output), status=200, mimetype='application/json')
+#
+# @app.route('/heartbeats/heartbeat', methods=['POST'])
+# def post_heartbeat():
+#     """
+#     Leader calls this endpoint to send periodic heartbeats.
+#     :return:
+#     """
+#     message = json.loads(request.get_data().decode('utf-8'))
+#     requester_term = message['term']
+#     if requester_term >= node.term:
+#         node.term = requester_term
+#         node.voted_for = None
+#         output = {'term': node.term}
+#         node.transition_to_new_role(Role.FOLLOWER)  # Received response from leader. Go back to follower state.
+#         node.reset_last_heartbeat()  # reset heartbeat timer of the node
+#         return Response(json.dumps(output), status=200, mimetype='application/json')
+#     else:
+#         output = {'term': node.term}  # requesting node has lower term. Inform it to go back to follower state.
+#         return Response(json.dumps(output), status=200, mimetype='application/json')
 
 
-@app.route('/logs/sync', methods=['POST'])
+@app.route('/logs/append', methods=['POST'])
 def sync_logs():
     """
     Leader sends logs data for syncing.
     :return:
     """
-    # TODO
-    return Response(SUCCESS_RESPONSE, status=200, mimetype='application/json')
+    message = json.loads(request.get_data().decode('utf-8'))
+    term = message['term']
+    leader_id = message['leaderId']
+    prev_log_term = message['prevLogTerm']
+    prev_log_index = message['prevLogIndex']
+    entry = message['entries'][0]  # we will send only on
+    leader_commit = message['leaderCommit']
+    output = {'term': node.term}
+    if term < node.term:
+        output['success'] = False
+        return output
+    node.leader = leader_id
+    update_term_return_to_follower(term)
+    if prev_log_index != -1 and (
+            node.logs.log_size <= prev_log_index or node.logs.entries[prev_log_index].term != prev_log_term):
+        output['success'] = False
+        return output
+    if node.logs.log_size > prev_log_index + 1 and node.logs.entries[prev_log_index + 1] != entry:
+        node.logs.delete_entries_from(prev_log_index + 1)
+        if entry:
+            node.logs.append(entry)
+        if leader_commit > node.committed_index:
+            node.committed_index = min(leader_commit, node.logs.log_size - 1)
+    output['success'] = True
+    return Response(output, status=200, mimetype='application/json')
 
 
 @app.route('/election/vote', methods=['POST'])
@@ -170,6 +263,13 @@ def vote_leader():
     message = json.loads(request.get_data().decode('utf-8'))
     requester_term = message['term']
     candidate_id = message['candidateId']
+    last_log_idx = message['lastLogIndex']
+    last_log_term = message['lastLogTerm']
+
+    # Log inconsistency
+    if node.logs.log_size > last_log_idx and node.logs.entries[last_log_idx].term != last_log_term:
+        output = {'vote': False, 'term': node.term}
+        return Response(json.dumps(output), status=200, mimetype='application/json')
 
     # update term and move to follower state
     if requester_term > node.term:

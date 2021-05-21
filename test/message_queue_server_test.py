@@ -132,7 +132,7 @@ def test_send_heartbeats():
         mocker.post('http://localhost:91/heartbeats/heartbeat', json={}, status_code=403)
         mocker.post('http://localhost:92/heartbeats/heartbeat', json={'term': 1}, status_code=200)
         mq_server.node = node
-        mq_server.send_heartbeats()
+        mq_server.append_entries()
         node.transition_to_new_role.assert_not_called()
 
     node.reset_mock()
@@ -143,5 +143,5 @@ def test_send_heartbeats():
         mocker.post('http://localhost:91/heartbeats/heartbeat', json={}, status_code=403)
         mocker.post('http://localhost:92/heartbeats/heartbeat', json={'term': 1}, status_code=200)
         mq_server.node = node
-        mq_server.send_heartbeats()
+        mq_server.append_entries()
         node.transition_to_new_role.assert_called_once_with(Role.FOLLOWER)
