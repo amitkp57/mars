@@ -14,13 +14,32 @@ def get_timeout():
 
 
 class Node:
-    def __init__(self, sibling_nodes):
-        self.__term = 0
+    def __init__(self, index, sibling_nodes):
+        self.__index = index  # server index
+        self.__term = 0  # term of the election
         self.__role = Role.FOLLOWER
-        self.__leader = None
+        self.__voted_for = None  # voted for in current term
+        self.__committed_index = -1
+        self.__last_applied = -1
         self.__last_heartbeat = time.perf_counter()
         self.__timeout = get_timeout()
         self.__sibling_nodes = sibling_nodes
+
+    @property
+    def committed_index(self):
+        return self.__committed_index
+
+    @property
+    def last_applied(self):
+        return self.__last_applied
+
+    @property
+    def voted_for(self):
+        return self.__voted_for
+
+    @property
+    def index(self):
+        return self.__index
 
     @property
     def term(self):
@@ -29,6 +48,11 @@ class Node:
     @term.setter
     def term(self, term):
         self.__term = term
+        return
+
+    @voted_for.setter
+    def voted_for(self, voted_for):
+        self.__voted_for = voted_for
         return
 
     @property
@@ -43,7 +67,7 @@ class Node:
     def sibling_nodes(self):
         return self.__sibling_nodes
 
-    def incremenet_term(self):
+    def increment_term(self):
         self.__term += 1
         return
 
