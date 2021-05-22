@@ -35,6 +35,8 @@ class Command():
 
     @classmethod
     def json_decode(cls, json_dict):
+        if not json_dict:
+            return None
         return Command(json_dict['id'], json_dict['operation'], json_dict['message'])
 
 
@@ -55,7 +57,7 @@ class LogEntry():
     def json_encode(self):
         return {
             'term': self.__term,
-            'command': self.__command.json_encode()
+            'command': None if not self.__command else self.__command.json_encode()
         }
 
     @classmethod

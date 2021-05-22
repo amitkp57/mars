@@ -35,8 +35,8 @@ class Node:
         self.__sibling_nodes = sibling_nodes
         self.__logs = NodeLog()
         # these two are used when node becomes leader
-        self.__next_index = None
-        self.__match_index = None
+        self.__next_index = {}
+        self.__match_index = {}
 
     @property
     def leader(self):

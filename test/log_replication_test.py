@@ -1,10 +1,12 @@
 import json
 
 import pytest
+import requests_mock
 
 import src.message_queue_server as mq_server
 from src import raft
 from src.log import LogEntry, Command
+from src.raft import Role
 
 node = None
 
@@ -21,10 +23,10 @@ def client(app):
     return app.test_client()
 
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(autouse=True)
 def set_up():
     global node
-    node = raft.Node(0, ['localhost:01', 'localhost:02'])
+    node = raft.Node(0, ['localhost:91', 'localhost:92', 'localhost:93'])
     node.term = 3
     node.logs.append(LogEntry(1, None))
     node.logs.append(LogEntry(1, None))
@@ -106,3 +108,27 @@ def test_sync_logs_success(client):
     assert node.logs.log_size == 4
     assert node.logs.entries[3].term == 3
     assert node.committed_index == 3
+
+
+def test_append_entries(client):
+    node.next_index['localhost:91'] = 5
+    node.next_index['localhost:92'] = 3
+    node.next_index['localhost:93'] = 2
+    with requests_mock.Mocker() as mocker:
+        mocker.post('http://localhost:91/logs/append', json={'success': True, 'term': 3}, status_code=200)
+        mocker.post('http://localhost:92/logs/append', json={'success': True, 'term': 3}, status_code=200)
+        mocker.post('http://localhost:93/logs/append', json={'success': False, 'term': 3}, status_code=200)
+        mq_server.append_entries()
+        assert node.next_index['localhost:91'] == 5
+        assert node.next_index['localhost:92'] == 4
+        assert node.next_index['localhost:93'] == 1
+        assert node.match_index['localhost:91'] == 4
+        assert node.match_index['localhost:92'] == 2
+
+    with requests_mock.Mocker() as mocker:
+        mocker.post('http://localhost:91/logs/append', json={'success': False, 'term': 4}, status_code=200)
+        mocker.post('http://localhost:92/logs/append', json={'success': True, 'term': 3}, status_code=200)
+        mocker.post('http://localhost:93/logs/append', json={'success': False, 'term': 3}, status_code=200)
+        mq_server.append_entries()
+        assert node.role == Role.FOLLOWER
+        assert node.term == 4

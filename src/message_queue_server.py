@@ -78,8 +78,8 @@ def append_entries():
                 data['prevLogTerm'] = node.logs.entries[prev_index].term
                 data['prevLogIndex'] = prev_index
                 if curr_index < node.logs.log_size:
-                    data['entry'] = node.logs[curr_index]
-            promise = executor.submit(rest_client.post, sibling_server, 'heartbeats/heartbeat', data)
+                    data['entry'] = node.logs.entries[curr_index].json_encode()
+            promise = executor.submit(rest_client.post, sibling_server, 'logs/append', data)
             futures[promise] = sibling_server
         for promise in as_completed(futures):
             try:
