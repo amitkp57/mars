@@ -138,7 +138,7 @@ def initiate_leader_election():
     votes = 1  # vote for itself
     # change to candidate role
     node.transition_to_new_role(raft.Role.CANDIDATE)
-    node.incremenet_term()
+    node.increment_term()
     node.voted_for = None
 
     with ThreadPoolExecutor(max_workers=5) as executor:
