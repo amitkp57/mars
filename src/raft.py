@@ -13,7 +13,11 @@ class Role(Enum):
 
 
 def get_timeout():
-    return random.uniform(10, 20)
+    return random.uniform(100, 500)  # milliseconds
+
+
+def get_time_millis():
+    return time.time() * 1000
 
 
 class Node:
@@ -26,7 +30,7 @@ class Node:
         self.__leader = None
         self.__committed_index = -1
         self.__last_applied = -1
-        self.__last_heartbeat = time.perf_counter()
+        self.__last_heartbeat = get_time_millis()
         self.__timeout = get_timeout()
         self.__sibling_nodes = sibling_nodes
         self.__logs = NodeLog()
@@ -124,7 +128,7 @@ class Node:
         """
         if self.is_leader():  # If leader itself, no need to check heartbeat timeout
             return False
-        cur_time = time.perf_counter()
+        cur_time = get_time_millis()
         time_elapsed = cur_time - self.__last_heartbeat
         if time_elapsed >= self.__timeout:
             print(f'Heartbeat timeout! Time elapsed since last heartbeat received: {time_elapsed}.')
@@ -136,12 +140,12 @@ class Node:
         """
         Resets last heartbeat received time to current time.
         """
-        self.__last_heartbeat = time.perf_counter()
+        self.__last_heartbeat = get_time_millis()
         self.__timeout = get_timeout()
 
-    def increment_last_applied(self):
-        with self.__thread_lock:
-            self.__last_applied += 1
+    @last_applied.setter
+    def last_applied(self, val):
+        self.__last_applied = val
         return
 
 

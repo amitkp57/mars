@@ -1,9 +1,9 @@
 import argparse
 import json
+import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import as_completed
 
-from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask
 from flask import Response
 from flask import request
@@ -11,7 +11,7 @@ from flask import request
 from src import raft, rest_client
 from src.raft import Role
 
-SCHEDULER_INTERVAL = 1
+SCHEDULER_INTERVAL = 0.01  # 100 milliseconds
 app = Flask(__name__)
 node = None
 queue = []
@@ -19,7 +19,7 @@ queue = []
 SUCCESS_RESPONSE = json.dumps({'status': 'succeeded'})
 FAIL_RESPONSE = json.dumps({'status': 'succeeded'})
 
-scheduler = BackgroundScheduler()
+executor = ThreadPoolExecutor(max_workers=1)
 
 
 def run_background_tasks():
@@ -29,14 +29,16 @@ def run_background_tasks():
     3. Apply committed logs to the state machines
     4. Leaders need to increase it's committed index once more than half of the nodes replicate a log entry.
     """
-    if node.is_leader():
-        append_entries()
-        update_committed_index()
+    while True:
+        if node.is_leader():
+            append_entries()
+            update_committed_index()
 
-    if node.check_heartbeat_timeout():
-        initiate_leader_election()
+        if node.check_heartbeat_timeout():
+            initiate_leader_election()
 
-    apply_state_machine()
+        apply_state_machine()
+        time.sleep(SCHEDULER_INTERVAL)
     return
 
 
@@ -267,19 +269,19 @@ def vote_leader():
     last_log_term = message['lastLogTerm']
 
     # Log inconsistency
-    if node.logs.log_size > last_log_idx and node.logs.entries[last_log_idx].term != last_log_term:
+    if node.logs.entries[-1].term > last_log_term or (
+            node.logs.entries[-1].term == last_log_term and node.logs.log_size > last_log_idx + 1):
         output = {'vote': False, 'term': node.term}
         return Response(json.dumps(output), status=200, mimetype='application/json')
 
     # update term and move to follower state
     if requester_term > node.term:
-        node.term = requester_term
+        update_term_return_to_follower(requester_term)
         node.voted_for = candidate_id
-        node.transition_to_new_role(Role.FOLLOWER)
         output = {'vote': True, 'term': node.term}
         return Response(json.dumps(output), status=200, mimetype='application/json')
     elif requester_term == node.term and (not node.voted_for or node.voted_for == candidate_id):
-        node.transition_to_new_role(Role.FOLLOWER)
+        update_term_return_to_follower(requester_term)
         node.voted_for = candidate_id
         output = {'vote': True, 'term': node.term}
         return Response(json.dumps(output), status=200, mimetype='application/json')
@@ -299,8 +301,7 @@ if __name__ == '__main__':
         nodes = [(server['ip'].removeprefix('http://'), server['port']) for server in server_config]
         sibling_nodes = [f'{node[0]}:{node[1]}' for idx, node in enumerate(nodes) if idx != args.index]
         node = raft.Node(args.index, sibling_nodes)
-        scheduler.add_job(func=run_background_tasks, trigger="interval", seconds=SCHEDULER_INTERVAL)
-        scheduler.start()
+        executor.submit(run_background_tasks())
         print(
             f'Starting server {args.index} on {nodes[args.index][0]}:{nodes[args.index][1]} with sibling nodes as '
             f'{sibling_nodes}.')
