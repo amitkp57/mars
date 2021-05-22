@@ -7,10 +7,15 @@ class Operation(Enum):
     PUT = 2
 
 
-class Command:
-    def __init__(self, operation, message=None):
+class Command():
+    def __init__(self, id, operation, message=None):
+        self.__id = id
         self.__operation = operation
         self.__message = message
+
+    @property
+    def id(self):
+        return self.__id
 
     @property
     def operation(self):
@@ -18,10 +23,22 @@ class Command:
 
     @property
     def message(self):
-        return self.__operation
+        return self.__message
+
+    # json serialization
+    def json_encode(self):
+        return {
+            'id': self.__id,
+            'operation': self.__operation,
+            'message': self.__message
+        }
+
+    @classmethod
+    def json_decode(cls, json_dict):
+        return Command(json_dict['id'], json_dict['operation'], json_dict['message'])
 
 
-class LogEntry:
+class LogEntry():
     def __init__(self, term, command):
         self.__term = term
         self.__command = command
@@ -33,6 +50,19 @@ class LogEntry:
     @property
     def command(self):
         return self.__command
+
+    # json serialization
+    def json_encode(self):
+        return {
+            'term': self.__term,
+            'command': self.__command.json_encode()
+        }
+
+    @classmethod
+    def json_decode(cls, json_dict):
+        if not json_dict:
+            return None
+        return LogEntry(json_dict['term'], Command.json_decode(json_dict['command']))
 
 
 class NodeLog:
@@ -63,3 +93,7 @@ class NodeLog:
 
     def append(self, entry):
         self.__entries.append(entry)
+
+
+if __name__ == '__main__':
+    print(LogEntry.json_decode(LogEntry(3, Command(1, '', '')).json_encode()))

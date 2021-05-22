@@ -105,6 +105,11 @@ class Node:
     def thread_lock(self):
         return self.__thread_lock
 
+    @committed_index.setter
+    def committed_index(self, committed_index):
+        self.__committed_index = committed_index
+        return
+
     def increment_term(self):
         self.__term += 1
         return

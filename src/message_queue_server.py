@@ -9,6 +9,7 @@ from flask import Response
 from flask import request
 
 from src import raft, rest_client
+from src.log import LogEntry
 from src.raft import Role
 
 SCHEDULER_INTERVAL = 0.01  # 100 milliseconds
@@ -234,7 +235,7 @@ def sync_logs():
     leader_id = message['leaderId']
     prev_log_term = message['prevLogTerm']
     prev_log_index = message['prevLogIndex']
-    entry = message['entries'][0]  # we will send only on
+    entry = LogEntry.json_decode(message['entry'])
     leader_commit = message['leaderCommit']
     output = {'term': node.term}
     if term < node.term:
@@ -248,12 +249,12 @@ def sync_logs():
         return output
     if node.logs.log_size > prev_log_index + 1 and node.logs.entries[prev_log_index + 1] != entry:
         node.logs.delete_entries_from(prev_log_index + 1)
-        if entry:
-            node.logs.append(entry)
-        if leader_commit > node.committed_index:
-            node.committed_index = min(leader_commit, node.logs.log_size - 1)
+    if entry:
+        node.logs.append(entry)
+    if leader_commit > node.committed_index:
+        node.committed_index = min(leader_commit, node.logs.log_size - 1)
     output['success'] = True
-    return Response(output, status=200, mimetype='application/json')
+    return output
 
 
 @app.route('/election/vote', methods=['POST'])

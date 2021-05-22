@@ -35,6 +35,7 @@ def set_up():
 
 
 def test_log_inconsistency(client):
+    # last log entry term is less than follower
     headers = {'content-type': 'application/json'}
     message = {
         'term': 4,
@@ -48,6 +49,7 @@ def test_log_inconsistency(client):
     assert data['vote'] == False
     assert data['term'] == 3
 
+    # candidate's log last index is less than follower
     message['lastLogTerm'] = 3
     response = client.post('/election/vote', data=json.dumps(message), headers=headers)
     data = json.loads(response.data.decode('utf-8'))
@@ -57,6 +59,7 @@ def test_log_inconsistency(client):
 
 
 def test_obsolete_term(client):
+    # candidate's term is less than follower
     headers = {'content-type': 'application/json'}
     message = {
         'term': 2,
@@ -70,6 +73,7 @@ def test_obsolete_term(client):
     assert data['vote'] == False
     assert data['term'] == 3
 
+    # follower voted for some other in current term
     message['term'] = 3
     node.voted_for = 1
     message['lastLogTerm'] = 3
@@ -81,6 +85,7 @@ def test_obsolete_term(client):
 
 
 def test_vote_leader_success(client):
+    # candidate's term is greater than follower
     headers = {'content-type': 'application/json'}
     message = {
         'term': 4,
