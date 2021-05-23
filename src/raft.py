@@ -7,9 +7,9 @@ from src.log import NodeLog
 
 
 class Role(Enum):
-    FOLLOWER = 1
-    CANDIDATE = 2
-    LEADER = 3
+    FOLLOWER = 'Follower'
+    CANDIDATE = 'Candidate'
+    LEADER = 'Leader'
 
 
 def get_timeout():

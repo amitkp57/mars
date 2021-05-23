@@ -16,7 +16,7 @@ from src.raft import Role
 SCHEDULER_INTERVAL = 0.01  # 10 milliseconds
 app = Flask(__name__)
 node = None
-queue = []
+topic_queues = dict()
 
 SUCCESS_RESPONSE = json.dumps({'status': 'succeeded'})
 FAIL_RESPONSE = json.dumps({'status': 'succeeded'})
@@ -182,29 +182,63 @@ def initiate_leader_election():
     return
 
 
-# TODO: topics
-@app.route('/messageQueue/message', methods=['GET'])
-def get_message():
+@app.route('/topic', methods=['PUT'])
+def put_topic():
     """
-    Removes the first message in the queue and returns it to client (FIFO). If queue is empty, 403-not found response is
-    returned.
-    :return:
+    Creates a new topic.
+    :return boolean: True if topic was created, False if topic exists already or not created.
     """
-    if queue:
-        return Response(json.dumps(queue.pop(0)), status=200, mimetype='application/json')
+    body = json.loads(request.get_data().decode('utf-8'))
+    topic = body['topic']
+    if topic in topic_queues.keys():
+        return {'success': False}
     else:
-        return Response(FAIL_RESPONSE, status=403, mimetype='application/json')
+        topic_queues[topic] = []
+        return {'success': True}
 
 
-@app.route('/messageQueue/message', methods=['PUT'])
+@app.route('/topic', methods=['GET'])
+def get_topics():
+    """
+    Returns the list of topics
+    :return list:
+    """
+    return {'success': True, 'topics': list(topic_queues.keys())}
+
+
+@app.route('/message', methods=['PUT'])
 def put_message():
     """
     Adds the message to end of the queue.
     :return:
     """
-    message = json.loads(request.get_data().decode('utf-8'))
-    queue.append(message)
-    return Response(SUCCESS_RESPONSE, status=201, mimetype='application/json')
+    body = json.loads(request.get_data().decode('utf-8'))
+    topic = body['topic']
+    message = body['message']
+    if topic not in topic_queues.keys():
+        return {'success': False}
+    topic_queues[topic].append(message)
+    return {'success': True}
+
+
+@app.route('/message/<topic>', methods=['GET'])
+def get_message(topic):
+    """
+    Returns first message from the topic
+    :return:
+    """
+    if topic not in topic_queues.keys() or not topic_queues[topic]:
+        return {'success': False}
+    return {'success': True, 'message': topic_queues[topic].pop(0)}
+
+
+@app.route('/status', methods=['GET'])
+def get_status():
+    """
+    Returns current node role and term information
+    :return:
+    """
+    return {'role': node.role.value, 'term': node.term}
 
 
 @app.route('/logs/append', methods=['POST'])
