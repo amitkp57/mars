@@ -1,125 +1,88 @@
-import json
+import threading
 
 import pytest
 
 import src.message_queue_server as mq_server
-from src import raft
-from src.raft import Role
+from src import raft, rest_client
 
 node = None
 topic_queues = {}
 
 
-@pytest.fixture()
-def app():
-    app = mq_server.app
-    mq_server.node = node
-    mq_server.topic_queues = topic_queues
-    return app
-
-
-@pytest.fixture
-def client(app):
-    return app.test_client()
-
-
 @pytest.fixture(autouse=True)
 def set_up():
     global node, topic_queues
-    node = raft.Node(0, ['localhost:91', 'localhost:92', 'localhost:93'])
+    node = raft.Node(0, [])
     topic_queues.clear()
+    app = mq_server.app
+    mq_server.node = node
+    mq_server.topic_queues = topic_queues
+    background_thread = threading.Thread(target=mq_server.run_background_tasks, daemon=True)
+    background_thread.start()
+    flask_thread = threading.Thread(target=app.run, args=('localhost', 9543), daemon=True)
+    flask_thread.start()
 
 
-def test_put_topic(client):
+def test_put_topic():
     # new topic
-    headers = {'content-type': 'application/json'}
-    response = client.put('/topic', data=json.dumps({'topic': 'topic1'}), headers=headers)
-    data = json.loads(response.data.decode('ascii'))
-    assert response.status_code == 200
-    assert data['success'] == True
+    response = rest_client.put('localhost:9543', 'topic', {'topic': 'topic1'})
+    assert response['success'] == True
 
     # existing topic
-    response = client.put('/topic', data=json.dumps({'topic': 'topic1'}), headers=headers)
-    data = json.loads(response.data.decode('ascii'))
-    assert response.status_code == 200
-    assert data['success'] == False
+    response = rest_client.put('localhost:9543', 'topic', {'topic': 'topic1'})
+    assert response['success'] == False
 
 
-def test_get_topic(client):
-    headers = {'content-type': 'application/json'}
+def test_get_topic():
     # no existing topic
-    response = client.get('/topic', headers=headers)
-    data = json.loads(response.data.decode('ascii'))
-    assert response.status_code == 200
-    assert data['success'] == True
-    assert data['topics'] == []
+    response = rest_client.get('localhost:9543', 'topic')
+    assert response['success'] == True
+    assert response['topics'] == []
 
     # new topic
-    response = client.put('/topic', data=json.dumps({'topic': 'topic1'}), headers=headers)
-    data = json.loads(response.data.decode('ascii'))
-    assert response.status_code == 200
-    assert data['success'] == True
+    response = rest_client.put('localhost:9543', 'topic', {'topic': 'topic1'})
+    assert response['success'] == True
 
     # get topics
-    response = client.get('/topic', headers=headers)
-    data = json.loads(response.data.decode('ascii'))
-    assert response.status_code == 200
-    assert data['success'] == True
-    assert data['topics'] == ['topic1']
+    response = rest_client.get('localhost:9543', 'topic')
+    assert response['success'] == True
+    assert response['topics'] == ['topic1']
 
 
-def test_put_message(client):
-    mq_server.topic_queues['topic2'] = []
-    headers = {'content-type': 'application/json'}
-    # unknwon topic
-    response = client.put('/message', data=json.dumps({'topic': 'topic1', 'message': 'msg1'}), headers=headers)
-    data = json.loads(response.data.decode('ascii'))
-    assert response.status_code == 200
-    assert data['success'] == False
-
-    # knwon topic
-    response = client.put('/message', data=json.dumps({'topic': 'topic2', 'message': 'msg1'}), headers=headers)
-    data = json.loads(response.data.decode('ascii'))
-    assert response.status_code == 200
-    assert data['success'] == True
-
-
-def test_get_message(client):
-    mq_server.topic_queues['topic1'] = ['msg1']
-    mq_server.topic_queues['topic2'] = []
-    headers = {'content-type': 'application/json'}
+def test_put_message():
     # unknown topic
-    response = client.get('/message/topic3', headers=headers)
-    data = json.loads(response.data.decode('ascii'))
-    assert response.status_code == 200
-    assert data['success'] == False
-
-    # no message in topic
-    response = client.get('/message/topic2', headers=headers)
-    data = json.loads(response.data.decode('ascii'))
-    assert response.status_code == 200
-    assert data['success'] == False
-
-    # message in topic
-    response = client.get('/message/topic1', headers=headers)
-    data = json.loads(response.data.decode('ascii'))
-    assert response.status_code == 200
-    assert data['success'] == True
-    assert data['message'] == 'msg1'
+    response = rest_client.put('localhost:9543', 'message', {'topic': 'topic1', 'message': 'msg1'})
+    assert response['success'] == False
 
     # known topic
-    response = client.put('/message', data=json.dumps({'topic': 'topic2', 'message': 'msg1'}), headers=headers)
-    data = json.loads(response.data.decode('ascii'))
-    assert response.status_code == 200
-    assert data['success'] == True
+    response = rest_client.put('localhost:9543', 'topic', {'topic': 'topic2'})
+    assert response['success'] == True
+    response = rest_client.put('localhost:9543', 'message', {'topic': 'topic2', 'message': 'msg1'})
+    assert response['success'] == True
 
 
-def test_status(client):
-    node.term = 1
-    node.transition_to_new_role(Role.CANDIDATE)
-    headers = {'content-type': 'application/json'}
-    response = client.get('/status', headers=headers)
-    data = json.loads(response.data.decode('ascii'))
-    assert response.status_code == 200
-    assert data['term'] == 1
-    assert data['role'] == 'Candidate'
+def test_get_message():
+    # unknown topic
+    response = rest_client.get('localhost:9543', 'message/topic3')
+    assert response['success'] == False
+
+    # no message in topic
+    response = rest_client.put('localhost:9543', 'topic', {'topic': 'topic2'})
+    assert response['success'] == True
+    response = rest_client.get('localhost:9543', 'message/topic2')
+    assert response['success'] == False
+
+    # message in topic
+    response = rest_client.put('localhost:9543', 'topic', {'topic': 'topic1'})
+    assert response['success'] == True
+    response = rest_client.put('localhost:9543', 'message', {'topic': 'topic1', 'message': 'msg1'})
+    assert response['success'] == True
+    response = rest_client.get('localhost:9543', 'message/topic1')
+    assert response['success'] == True
+    assert response['message'] == 'msg1'
+
+
+def test_status():
+    response = rest_client.get('localhost:9543', 'status')
+    assert response['term'] == 0
+    assert response['role'] == 'Leader'

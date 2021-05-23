@@ -21,6 +21,12 @@ topic_queues = dict()
 results = dict()
 
 
+@app.before_request
+def leader_check():
+    if not node.is_leader() and request.endpoint not in ('get_status', 'vote_leader', 'sync_logs'):
+        return "Only leader node can serve requests.", 403
+
+
 def run_background_tasks():
     """
     1. if node is leader, it needs to send heartbeats and log entries for syncing followers' logs with its own.
@@ -64,6 +70,7 @@ def apply_put_message(command):
     id = command.id
     if topic not in topic_queues.keys():
         results[id] = {'success': False}
+        return
     topic_queues[topic].append(message)
     results[id] = {'success': True}
     return
@@ -74,6 +81,7 @@ def apply_get_message(command):
     id = command.id
     if topic not in topic_queues.keys() or not topic_queues[topic]:
         results[id] = {'success': False}
+        return
     results[id] = {'success': True, 'message': topic_queues[topic].pop(0)}
     return
 
@@ -128,8 +136,8 @@ def append_entries():
                 prev_index = curr_index - 1
                 data['prevLogTerm'] = node.logs.entries[prev_index].term
                 data['prevLogIndex'] = prev_index
-                if curr_index < node.logs.log_size:
-                    data['entry'] = node.logs.entries[curr_index].json_encode()
+            if curr_index < node.logs.log_size:
+                data['entry'] = node.logs.entries[curr_index].json_encode()
             promise = executor.submit(rest_client.post, sibling_server, 'logs/append', data, timeout=0.1)
             futures[promise] = sibling_server
         for promise in as_completed(futures):
