@@ -3,8 +3,10 @@ from enum import Enum
 
 
 class Operation(Enum):
-    GET = 1
-    PUT = 2
+    GET_MESSAGE = 1
+    PUT_MESSAGE = 2
+    GET_TOPICS = 3
+    PUT_TOPIC = 4
 
 
 class Command():
@@ -12,6 +14,9 @@ class Command():
         self.__id = id
         self.__operation = operation
         self.__message = message
+
+    def __str__(self):
+        return f'Command(id="{self.__id}", operation="{self.__operation.name}", message="{self.__message}")'
 
     @property
     def id(self):
@@ -29,7 +34,7 @@ class Command():
     def json_encode(self):
         return {
             'id': self.__id,
-            'operation': self.__operation,
+            'operation': self.__operation.value,
             'message': self.__message
         }
 
@@ -37,13 +42,16 @@ class Command():
     def json_decode(cls, json_dict):
         if not json_dict:
             return None
-        return Command(json_dict['id'], json_dict['operation'], json_dict['message'])
+        return Command(json_dict['id'], Operation(json_dict['operation']), json_dict['message'])
 
 
 class LogEntry():
     def __init__(self, term, command):
         self.__term = term
         self.__command = command
+
+    def __str__(self):
+        return f'LogEntry(term="{self.__term}", command="{self.__command}")'
 
     @property
     def term(self):
@@ -74,6 +82,10 @@ class NodeLog:
         self.__committed_index = -1
         self.__applied_index = -1
 
+    def __str__(self):
+        return f'NodeLog(committed_index="{self.__committed_index}", applied_index="{self.__applied_index}", ' \
+               f'entries={self.__entries})'
+
     @property
     def committed_index(self):
         return self.__committed_index
@@ -98,4 +110,7 @@ class NodeLog:
 
 
 if __name__ == '__main__':
-    print(LogEntry.json_decode(LogEntry(3, Command(1, '', '')).json_encode()))
+    # print(LogEntry.json_decode(LogEntry(3, Command(1, '', '')).json_encode()))
+    print(Command(123, Operation.PUT_MESSAGE, 'msg'))
+    print(Operation.PUT_TOPIC.name)
+    print(Operation.PUT_TOPIC == Operation.PUT_TOPIC)

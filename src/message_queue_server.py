@@ -2,6 +2,7 @@ import argparse
 import json
 import threading
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import as_completed
 
@@ -10,16 +11,14 @@ from flask import Response
 from flask import request
 
 from src import raft, rest_client
-from src.log import LogEntry
+from src.log import LogEntry, Operation, Command
 from src.raft import Role
 
 SCHEDULER_INTERVAL = 0.01  # 10 milliseconds
 app = Flask(__name__)
 node = None
 topic_queues = dict()
-
-SUCCESS_RESPONSE = json.dumps({'status': 'succeeded'})
-FAIL_RESPONSE = json.dumps({'status': 'succeeded'})
+results = dict()
 
 
 def run_background_tasks():
@@ -42,6 +41,43 @@ def run_background_tasks():
     return
 
 
+def apply_put_topic(command):
+    topic = command.message
+    id = command.id
+    if topic in topic_queues.keys():
+        results[id] = {'success': False}
+    else:
+        topic_queues[topic] = []
+        results[id] = {'success': True}
+    return
+
+
+def apply_get_topic(command):
+    results[command.id] = {'success': True, 'topics': list(topic_queues.keys())}
+    return
+
+
+def apply_put_message(command):
+    data = json.loads(command.message)
+    topic = data['topic']
+    message = data['message']
+    id = command.id
+    if topic not in topic_queues.keys():
+        results[id] = {'success': False}
+    topic_queues[topic].append(message)
+    results[id] = {'success': True}
+    return
+
+
+def apply_get_message(command):
+    topic = command.message
+    id = command.id
+    if topic not in topic_queues.keys() or not topic_queues[topic]:
+        results[id] = {'success': False}
+    results[id] = {'success': True, 'message': topic_queues[topic].pop(0)}
+    return
+
+
 def apply_state_machine():
     """
     Apply commands to the state machine i.e. get/put messages from/into queue
@@ -49,8 +85,24 @@ def apply_state_machine():
     """
     with node.thread_lock:
         if node.committed_index > node.last_applied:
-            node.increment_last_applied()
-            # TODO update queues
+            try:
+                next_idx = node.last_applied + 1
+                log_entry = node.logs.entries[next_idx]
+                command = log_entry.command
+                if command.operation is Operation.PUT_TOPIC:
+                    apply_put_topic(command)
+                elif command.operation is Operation.GET_TOPICS:
+                    apply_get_topic(command)
+                elif command.operation is Operation.PUT_MESSAGE:
+                    apply_put_message(command)
+                elif command.operation is Operation.GET_MESSAGE:
+                    apply_get_message(command)
+                else:
+                    raise Exception(f'Unknown command: {command.operation}.')
+            except Exception as e:
+                results[command.id] = {'error_stack': str(e)}
+                print(f'Error occurred while applying {command.operation}. Error: {e}.')
+            node.last_applied += 1
     return
 
 
@@ -178,8 +230,19 @@ def initiate_leader_election():
                     return
             futures = retries
 
-    node.transition_to_new_role(raft.Role.FOLLOWER)
+    # special case: 1 node system
+    if votes > node.total_nodes / 2 and node.role == Role.CANDIDATE:
+        node.transition_to_new_role(raft.Role.LEADER)
+        for sibling_server in node.sibling_nodes:
+            node.next_index[sibling_server] = node.logs.log_size
+            node.match_index[sibling_server] = -1
+    else:
+        node.transition_to_new_role(raft.Role.FOLLOWER)
     return
+
+
+def get_uuid():
+    return str(uuid.uuid4())
 
 
 @app.route('/topic', methods=['PUT'])
@@ -190,11 +253,13 @@ def put_topic():
     """
     body = json.loads(request.get_data().decode('utf-8'))
     topic = body['topic']
-    if topic in topic_queues.keys():
-        return {'success': False}
-    else:
-        topic_queues[topic] = []
-        return {'success': True}
+    id = get_uuid()
+    log_entry = LogEntry(node.term, Command(id, Operation.PUT_TOPIC, topic))
+    node.logs.append(log_entry)
+    log_index = node.logs.log_size - 1
+    while node.committed_index < log_index:
+        time.sleep(0.01)
+    return results[id]
 
 
 @app.route('/topic', methods=['GET'])
@@ -203,7 +268,13 @@ def get_topics():
     Returns the list of topics
     :return list:
     """
-    return {'success': True, 'topics': list(topic_queues.keys())}
+    id = get_uuid()
+    log_entry = LogEntry(node.term, Command(id, Operation.GET_TOPICS, ''))
+    node.logs.append(log_entry)
+    log_index = node.logs.log_size - 1
+    while node.committed_index < log_index:
+        time.sleep(0.01)
+    return results[id]
 
 
 @app.route('/message', methods=['PUT'])
@@ -212,13 +283,14 @@ def put_message():
     Adds the message to end of the queue.
     :return:
     """
-    body = json.loads(request.get_data().decode('utf-8'))
-    topic = body['topic']
-    message = body['message']
-    if topic not in topic_queues.keys():
-        return {'success': False}
-    topic_queues[topic].append(message)
-    return {'success': True}
+    body = request.get_data().decode('utf-8')
+    id = get_uuid()
+    log_entry = LogEntry(node.term, Command(id, Operation.PUT_MESSAGE, body))
+    node.logs.append(log_entry)
+    log_index = node.logs.log_size - 1
+    while node.committed_index < log_index:
+        time.sleep(0.01)
+    return results[id]
 
 
 @app.route('/message/<topic>', methods=['GET'])
@@ -227,9 +299,13 @@ def get_message(topic):
     Returns first message from the topic
     :return:
     """
-    if topic not in topic_queues.keys() or not topic_queues[topic]:
-        return {'success': False}
-    return {'success': True, 'message': topic_queues[topic].pop(0)}
+    id = get_uuid()
+    log_entry = LogEntry(node.term, Command(id, Operation.GET_MESSAGE, topic))
+    node.logs.append(log_entry)
+    log_index = node.logs.log_size - 1
+    while node.committed_index < log_index:
+        time.sleep(0.01)
+    return results[id]
 
 
 @app.route('/status', methods=['GET'])
