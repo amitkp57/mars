@@ -13,7 +13,7 @@ topic’s message queue
 2. GET(topic) will pop the first message from the topic’s queue and return
 the message
 3. GET(topics) will return the list of topics
-4. PUT(TOPIC) will create a new topic
+4. PUT(topic) will create a new topic
 
 Message queues will follow a first-in-first-out (FIFO) mode.
 Messages will be consumed (GET) only once by only one consumer. This implies
