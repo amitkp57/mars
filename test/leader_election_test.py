@@ -3,7 +3,7 @@ import json
 import pytest
 import requests_mock
 
-import src.message_queue_server as mq_server
+import src.node as mq_server
 from src import raft
 from src.log import LogEntry
 from src.raft import Role

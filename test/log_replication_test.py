@@ -3,9 +3,9 @@ import json
 import pytest
 import requests_mock
 
-import src.message_queue_server as mq_server
+import src.node as mq_server
 from src import raft
-from src.log import LogEntry, Command
+from src.log import LogEntry, Command, Operation
 from src.raft import Role
 
 node = None
@@ -97,7 +97,7 @@ def test_sync_logs_success(client):
         'leaderId': 3,
         'prevLogTerm': 2,
         'prevLogIndex': 2,
-        'entry': LogEntry(3, Command(1, '', '')).json_encode(),
+        'entry': LogEntry(3, Command(1, Operation.GET_TOPICS, '')).json_encode(),
         'leaderCommit': 5
     }
     response = client.post('/logs/append', data=json.dumps(message), headers=headers)

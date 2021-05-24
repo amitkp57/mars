@@ -2,21 +2,16 @@ import threading
 
 import pytest
 
-import src.message_queue_server as mq_server
+import src.node as mq_server
 from src import raft, rest_client
-
-node = None
-topic_queues = {}
 
 
 @pytest.fixture(autouse=True)
 def set_up():
-    global node, topic_queues
     node = raft.Node(0, [])
-    topic_queues.clear()
     app = mq_server.app
     mq_server.node = node
-    mq_server.topic_queues = topic_queues
+    mq_server.topic_queues = {}
     background_thread = threading.Thread(target=mq_server.run_background_tasks, daemon=True)
     background_thread.start()
     flask_thread = threading.Thread(target=app.run, args=('localhost', 9543), daemon=True)
@@ -84,5 +79,5 @@ def test_get_message():
 
 def test_status():
     response = rest_client.get('localhost:9543', 'status')
-    assert response['term'] == 0
+    assert response['term'] > 0
     assert response['role'] == 'Leader'

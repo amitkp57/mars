@@ -13,7 +13,7 @@ class Role(Enum):
 
 
 def get_timeout():
-    return random.uniform(500, 1500)  # milliseconds
+    return random.uniform(500, 1000)  # milliseconds
 
 
 def get_time_millis():
