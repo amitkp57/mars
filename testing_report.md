@@ -1,6 +1,6 @@
 #### Tests
 I have tested on windows and all tests passed. However if you are running on unix, you need to change 'python' to 
-suitable python version e.g. 'python3'
+suitable python version e.g. 'python3' in 'test\test_utils.py'.
 
     def start(self, sleep=0):
         self.startup_sequence = ["python",
