@@ -166,12 +166,17 @@ def update_committed_index():
     """
     if node.logs.log_size - 1 == node.committed_index:
         return
-    count = 1
-    for value in node.match_index.values():
-        if value > node.committed_index:
-            count += 1
-    if count > (node.total_nodes / 2):
-        node.committed_index += 1
+    value = node.committed_index + 1
+    while value < node.logs.log_size:
+        count = 1
+        for val in node.match_index.values():
+            if val >= value:
+                count += 1
+        if count <= (node.total_nodes / 2):
+            return
+        if node.logs.entries[value].term == node.term:
+            node.committed_index = value
+        value += 1
     return
 
 
@@ -265,7 +270,7 @@ def put_topic():
     log_entry = LogEntry(node.term, Command(id, Operation.PUT_TOPIC, topic))
     node.logs.append(log_entry)
     log_index = node.logs.log_size - 1
-    while node.committed_index < log_index:
+    while node.last_applied < log_index:
         time.sleep(0.01)
     return results[id]
 
@@ -280,7 +285,7 @@ def get_topics():
     log_entry = LogEntry(node.term, Command(id, Operation.GET_TOPICS, ''))
     node.logs.append(log_entry)
     log_index = node.logs.log_size - 1
-    while node.committed_index < log_index:
+    while node.last_applied < log_index:
         time.sleep(0.01)
     return results[id]
 
@@ -296,7 +301,7 @@ def put_message():
     log_entry = LogEntry(node.term, Command(id, Operation.PUT_MESSAGE, body))
     node.logs.append(log_entry)
     log_index = node.logs.log_size - 1
-    while node.committed_index < log_index:
+    while node.last_applied < log_index:
         time.sleep(0.01)
     return results[id]
 
@@ -311,7 +316,7 @@ def get_message(topic):
     log_entry = LogEntry(node.term, Command(id, Operation.GET_MESSAGE, topic))
     node.logs.append(log_entry)
     log_index = node.logs.log_size - 1
-    while node.committed_index < log_index:
+    while node.last_applied < log_index:
         time.sleep(0.01)
     return results[id]
 

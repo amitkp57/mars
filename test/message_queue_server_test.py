@@ -79,5 +79,5 @@ def test_get_message():
 
 def test_status():
     response = rest_client.get('localhost:9543', 'status')
-    assert response['term'] > 0
+    assert response['term'] >= 0
     assert response['role'] == 'Leader'

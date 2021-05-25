@@ -112,3 +112,9 @@ to send append entry messages to other nodes to sync logs. Once more than half o
 their logs, leader commits the entry in its logs. After leader commits, other nodes start committing the entry. 
 Committed entries are applied to state machine asynchronously. After a entry is applied to leader's state machine,
 leader replies back to the client. 
+
+This implementation is almost similar to what has been proposed on raft paper.<br/> 
+
+References:<br/>
+1. https://raft.github.io/raft.pdf <br/>
+2. http://cs.brown.edu/courses/csci1380/s16/lectures/11raft.pdf <br/>
