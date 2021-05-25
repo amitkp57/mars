@@ -24,7 +24,7 @@ RRMQ combines distribution,
 consistency, replication, fault tolerance, consensus, and messaging. 
 
 ### Start a node
-    python src\message_queue_server.py config\server_config.json 0
+    python src\node.py config\server_config.json 0
     
 ### Client 
     python src\message_client.py 

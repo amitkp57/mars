@@ -1,4 +1,15 @@
 #### Tests
+I have tested on windows and all tests passed. However if you are running on unix, you need to change 'python' to 
+suitable python version e.g. 'python3'
+
+    def start(self, sleep=0):
+        self.startup_sequence = ["python",
+                                 self.program_file_path,
+                                 self.config_path,
+                                 str(self.i)]
+        self.process = Popen(self.startup_sequence)
+        self.pid = self.process.pid
+        time.sleep(sleep)
 To run the tests, run the below command from the base project directory i.e. /project-mars-1
     
     pytest
@@ -33,3 +44,5 @@ Tests the below rest endpoints. It starts a single node to test the functionalit
     election_test.py<br/>
     replication_test.py<br/>
     message_queue_test.py<br/>
+    
+    
