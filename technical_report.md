@@ -83,6 +83,7 @@ Role is a string with one of three options:
 1. Leader
 2. Candidate
 3. Follower
+
 Term return the term that this node is currently in as INT (to the best of its
 knowledge)
 
